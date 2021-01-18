@@ -91,37 +91,38 @@ begin
             SSensor1En <= '0';
             SSensorDataOutBuffer <= SSensorDataOut;
             state                <= uarttx;
-            txstate              <= data1;
+            STxEn   <= '1';
+            STxData <= SSensorDataOutBuffer(31 downto 24);
           end if;
 
         when uarttx =>
         STxPrevBusy <= STxBusy;
           case txstate is
             when data1 =>
-              STxEn   <= '1';
-              STxData <= SSensorDataOutBuffer(31 downto 24);
-              if STxBusy = '0' and STxPrevBusy = '1' or STxPrevBusy = '0' then
-                    STxEn   <= '0';
+              STxEn <= '0';
+              if STxBusy = '0' and STxPrevBusy = '1' then
+                    STxEn   <= '1';
+                    STxData <= SSensorDataOutBuffer(23 downto 16);
                     txstate <= data2;
               end if;
             when data2 =>
-              STxEn   <= '1';
-              STxData <= SSensorDataOutBuffer(23 downto 16);
+              STxEn   <= '0';
               if STxBusy = '0' and STxPrevBusy = '1' then
                 txstate <= data3;
-                STxEn   <= '0';
+                STxData <= SSensorDataOutBuffer(15 downto 8);
+                STxEn   <= '1';
               end if;
             when data3 =>
-              STxEn   <= '1';
-              STxData <= SSensorDataOutBuffer(15 downto 8);
+              STxEn   <= '0';
               if STxBusy = '0' and STxPrevBusy = '1' then
                 txstate <= data4;
-                STxEn   <= '0';
+                STxData <= SSensorDataOutBuffer(7 downto 0);
+                STxEn   <= '1';
               end if;
             when data4 =>
-              STxEn   <= '1';
-              STxData <= SSensorDataOutBuffer(7 downto 0);
+              STxEn   <= '0';
               if STxBusy = '0' and STxPrevBusy = '1' then
+                txstate              <= data1;
                 state <= delay;
                 STxEn <= '0';
               end if;
