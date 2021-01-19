@@ -10,7 +10,9 @@ generic (
     PIClk  : in std_logic;
     PIOSDA : inout std_logic;
     PIOSCL : inout std_logic;
-    POTX   : out std_logic
+    POTX   : out std_logic;
+    PIAlarmResetTop : in std_logic;
+    POAlarmTop : out std_logic_vector(1 downto 0)
   );
 end M_Top;
 
@@ -24,6 +26,9 @@ architecture Behavioral of M_Top is
       PISysClk        : in std_logic;
       PIOSysSDA       : inout std_logic;
       PIOSysSCL       : inout std_logic;
+      PISysReset      : in std_logic;
+      PIAlarmReset    : in std_logic;
+      POAlarm         : out std_logic_vector(1 downto 0);
       PISysEnable     : in std_logic;
       POSysTemHumData : out std_logic_vector(31 downto 0);
       POSysDataReady  : out std_logic
@@ -45,27 +50,28 @@ architecture Behavioral of M_Top is
     );
   end component;
 
+
+ type txmachine is (data1, data2, data3, data4);
+  signal txstate : txmachine := data1;
+
+    type machine is (delay, sensordata, uarttx);
+  signal state : machine := sensordata;
+
   signal SSensor1En       : std_logic;
   signal SSensorDataOut   : std_logic_vector(31 downto 0);
   signal SSensorDataReady : std_logic;
-
   signal SSensorDataOutBuffer : std_logic_vector(31 downto 0);
-
   signal STxData     : std_logic_vector(7 downto 0);
   signal STxReset    : std_logic;
   signal STxEn       : std_logic;
   signal STxBusy     : std_logic;
   signal STxPrevBusy : std_logic;
-  type machine is (delay, sensordata, uarttx);
-  signal state : machine := sensordata;
-
-  type txmachine is (data1, data2, data3, data4);
-  signal txstate : txmachine := data1;
 
   attribute mark_debug                         : string;
   attribute mark_debug of SSensorDataReady     : signal is "true";
   attribute mark_debug of SSensorDataOut       : signal is "true";
   attribute mark_debug of SSensorDataOutBuffer : signal is "true";
+
 
 begin
 
@@ -136,6 +142,7 @@ begin
     end if;
   end process;
 
+
   Sensor1Controller : M_Sensor1_Controller
   port map(
     PISysClk        => PIClk,
@@ -143,7 +150,10 @@ begin
     PIOSysSCL       => PIOSCL,
     PISysEnable     => SSensor1En,
     POSysTemHumData => SSensorDataOut,
-    POSysDataReady  => SSensorDataReady
+    POSysDataReady  => SSensorDataReady,
+    PIAlarmReset    => PIAlarmResetTop,
+    PISysReset      => '1',
+    POAlarm         => POAlarmTop
   );
 
   UART_Transmitter : UART_TX
