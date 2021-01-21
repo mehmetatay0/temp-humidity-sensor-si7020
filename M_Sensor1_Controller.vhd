@@ -43,7 +43,7 @@ architecture Behavioral of M_Sensor1_Controller is
   type machine_command is (temp, hum);
   signal state_command : machine_command := temp;
 
-  type machine is (start, read, stop);
+  type machine is (start, read, dataout, stop);
   signal state : machine := start;
 
   signal SCommandAddr : std_logic_vector(7 downto 0) := (others => '0');
@@ -55,19 +55,18 @@ architecture Behavioral of M_Sensor1_Controller is
   signal SDoubleData  : std_logic_vector(15 downto 0);
   signal SPrevBusy    : std_logic;
   signal SAlarmCounter : integer range 0 to 100_000_000 := 0;
-  signal SAlarmClk    : std_logic := '0';
-  signal SAlarmCheckData : std_logic_vector(31 downto 0);
-  signal temprealvalue_fixed : integer;
-  signal temprealvalue : integer;
-  signal humrealvalue_fixed : integer;
-  signal humrealvalue : integer;
+  signal SAlarmDataRd    : std_logic := '0';
+  -- signal temprealvalue_fixed : integer;
+  -- signal temprealvalue : integer;
+  -- signal humrealvalue_fixed : integer;
+  -- signal humrealvalue : integer;
   signal STempHumBuffer : std_logic_vector(31 downto 0);
+  -- signal SAlarmResetCheck : std_logic := '0';
 
 
   attribute mark_debug                         : string;
-  attribute mark_debug of temprealvalue_fixed : signal is "true";
-  attribute mark_debug of humrealvalue_fixed : signal is "true";
-  attribute mark_debug of SAlarmClk : signal is "true";
+  attribute mark_debug of SAlarmDataRd : signal is "true";
+  -- attribute mark_debug of SAlarmResetCheck : signal is "true";
 
 begin
 
@@ -76,6 +75,7 @@ begin
     if (PISysReset = '0') then
     state <= start;
     state_command <= temp;
+    POSysTemHumData <= (others => '0');
     POSysDataReady <= '0';
     SReset <= '0';
     SCommandAddr <= (others => '0');
@@ -86,13 +86,13 @@ begin
           when start =>
           if PISysEnable = '1' then
             POSysDataReady <= '0';
-            SAlarmClk       <= '0';
+            SAlarmDataRd       <= '0';
             state_command  <= temp;
             SReset         <= '1';
             state          <= read;
           else
             POSysDataReady <= '0';
-            SAlarmClk       <= '0';
+            SAlarmDataRd       <= '0';
             SReset         <= '0';
             state <= start;
           end if;
@@ -115,71 +115,54 @@ begin
                   SHumData <= SDoubleData;
                   SEnable  <= '0';
                   SReset   <= '0';
-                  state    <= stop;
+                  state    <= dataout;
                 end if;
             end case;
-          when stop =>
-            POSysDataReady  <= '1';
-            SAlarmClk       <= '1';
+          
+          when dataout =>
             POSysTemHumData <= STempData & SHumData;
             STempHumBuffer <= STempData & SHumData;
+            state <= stop;
+          
+          when stop =>
+            POSysDataReady  <= '1';
+            SAlarmDataRd    <= '1';
             state           <= start;
         end case;
     end if;
   end process;
 
 
-  -- ALARM_CLK : process (PISysClk, PISysReset)
-  -- begin
-  --   if (PISysReset = '0') then
-  --   SAlarmCounter <= 0;
-  --   elsif PISysClk'event and PISysClk = '1' then
-  --       if SAlarmCounter = 50_000_000 then        --1sn Clk
-  --         SAlarmClk <= not SAlarmClk;
-  --         SAlarmCounter <= 0;
-  --       else
-  --       SAlarmCounter <= SAlarmCounter + 1;
-  --       end if;
-  --   end if;
-  -- end process;
-
-  -- ALARM_CHECK_DATA : process (SAlarmClk, PISysReset)
-  -- begin
-  --   if (PISysReset = '0') then
-  --   SAlarmCheckData <= (others => '0');
-
-  --   elsif SAlarmClk'event and SAlarmClk = '0' then
-  --     SAlarmCheckData <= STempData & SHumData;
-  --   end if;
-  -- end process;
-
-  ALARM_CHECK : process (PISysClk, SAlarmClk, PISysReset)
+  ALARM_CHECK : process (PIAlarmReset, SAlarmDataRd)
   begin
-    if (PISysReset = '0') then
-
-    elsif SAlarmClk'event and SAlarmClk = '1' then
-      temprealvalue <= to_integer(unsigned(STempHumBuffer(31 downto 16)));
-      temprealvalue_fixed <= (temprealvalue*17572) / 6553600 - 47;
-
-      humrealvalue <= to_integer(unsigned(STempHumBuffer(15 downto 0)));
-      humrealvalue_fixed <= (humrealvalue*125) / 65536 - 6;    
-
-        if temprealvalue_fixed > 30 then
-          POAlarm(1) <= '1';
-        elsif temprealvalue_fixed < 0 then
-          POAlarm(1) <= '1';
-        end if;
-
-        if (humrealvalue_fixed < 20) then 
-          POAlarm(0) <= '1';
-        elsif (humrealvalue_fixed > 50) then
-          POAlarm(0) <= '1';
-        end if;
-    end if;
-    if PISysClk'event and PISysClk = '1' then     --reset operation
-      if PIAlarmReset = '1' then
-        POAlarm <= (others => '0');
+    if (PIAlarmReset = '1') then
+      POAlarm <= (others => '0');
+    elsif SAlarmDataRd'event and SAlarmDataRd = '1' then
+      if (STempHumBuffer(31 downto 16) > x"6FF5") or (STempHumBuffer(31 downto 16) < x"4441") then -- Temp: Max 30 - Min 0
+        POAlarm(1) <= '1';  
       end if;
+      if (STempHumBuffer(15 downto 0) > x"72B0") or (STempHumBuffer(15 downto 0) < x"353F") then   -- Hum: Max 50 - Min 20
+        POAlarm(0) <= '1';  
+      end if;
+
+
+      -- temprealvalue <= to_integer(unsigned(STempHumBuffer(31 downto 16)));
+      -- temprealvalue_fixed <= (temprealvalue*17572) / 6553600 - 47;
+
+      -- humrealvalue <= to_integer(unsigned(STempHumBuffer(15 downto 0)));
+      -- humrealvalue_fixed <= (humrealvalue*125) / 65536 - 6;    
+
+      -- if temprealvalue_fixed > 30 then
+      --   POAlarm(1) <= '1';
+      -- elsif temprealvalue_fixed < 0 then
+      --   POAlarm(1) <= '1';
+      -- end if;
+
+      -- if (humrealvalue_fixed < 20) then 
+      --   POAlarm(0) <= '1';
+      -- elsif (humrealvalue_fixed > 50) then
+      --   POAlarm(0) <= '1';
+      -- end if;
     end if;
   end process;
 
